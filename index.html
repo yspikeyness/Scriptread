@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; media-src 'self' blob:; style-src 'self'; img-src 'self' blob:; connect-src 'self' https:;">
+  <title>SelfTape Reader</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SelfTape">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#111111">
+</head>
+<body>
+  <!-- Texts marked data-i18n are translated by i18n.js; the English here is the original. -->
+  <header>
+    <h1>SelfTape Reader</h1>
+    <nav class="tabs" role="tablist">
+      <button data-view="script" class="active" role="tab" aria-selected="true" data-i18n>Script</button>
+      <button data-view="rehearse" role="tab" aria-selected="false" data-i18n>Rehearse</button>
+      <button data-view="record" role="tab" aria-selected="false" data-i18n>Record</button>
+      <button data-view="slate" role="tab" aria-selected="false" data-i18n>Slate</button>
+    </nav>
+    <div class="header-right">
+      <span id="status" class="status" role="status"></span>
+      <button id="settings-btn" class="small" data-i18n>⚙ Settings</button>
+    </div>
+  </header>
+
+  <dialog id="library-dialog" class="dialog wide">
+    <h2 data-i18n>Get more voices</h2>
+    <p class="note">
+      <span data-i18n>Free voices from the Piper project. Each one downloads once, then works offline and appears in the character voice menus. Voices marked "speakers" contain several different people.</span>
+      <span data-i18n>Hear samples at</span>
+      <a href="https://rhasspy.github.io/piper-samples/" target="_blank">rhasspy.github.io/piper-samples</a>.
+    </p>
+    <div class="library-filters">
+      <select id="library-language" aria-label="Language" data-i18n-aria></select>
+      <select id="library-region" aria-label="Accent" data-i18n-aria></select>
+      <select id="library-quality" aria-label="Quality" data-i18n-aria>
+        <option value="good" data-i18n>Medium &amp; high quality</option>
+        <option value="" data-i18n>All qualities</option>
+      </select>
+    </div>
+    <div id="library-list" class="library-list"></div>
+    <div class="dialog-buttons">
+      <button id="library-close" class="primary" data-i18n>Done</button>
+    </div>
+  </dialog>
+
+  <dialog id="settings-dialog" class="dialog wide">
+    <h2 data-i18n>Settings</h2>
+
+    <h3 class="settings-group" data-i18n>Language</h3>
+    <section class="setting">
+      <label class="setting-label" for="settings-ui-language" data-i18n>App language</label>
+      <select id="settings-ui-language"></select>
+      <p class="note" data-i18n>The language of the app's buttons and messages. Each script's own language is chosen in the Script tab.</p>
+    </section>
+
+    <h3 class="settings-group" data-i18n>Camera &amp; microphone</h3>
+    <section class="setting">
+      <label class="setting-label" for="settings-camera" data-i18n>Camera</label>
+      <select id="settings-camera"></select>
+      <p class="note" data-i18n>Your iPhone shows up here when Continuity Camera is available (Mac only). Any connected webcam is listed too.</p>
+    </section>
+    <section class="setting">
+      <label class="setting-label" for="settings-mic" data-i18n>Microphone</label>
+      <select id="settings-mic"></select>
+    </section>
+
+    <h3 class="settings-group" data-i18n>Video</h3>
+    <section class="setting two-col">
+      <label class="setting-label" for="settings-quality"><span data-i18n>Quality</span>
+        <select id="settings-quality"></select>
+      </label>
+      <label class="setting-label" for="settings-format"><span data-i18n>Format</span>
+        <select id="settings-format">
+          <option value="mp4" data-i18n>MP4 (recommended for casting sites)</option>
+          <option value="webm">WebM</option>
+        </select>
+      </label>
+    </section>
+    <p id="settings-resolution" class="note"></p>
+
+    <h3 class="settings-group" data-i18n>Saving</h3>
+    <p id="settings-share-note" class="note" hidden data-i18n>On iPhone and iPad, Save opens the share sheet: choose Save Video (Photos) or Save to Files (iCloud Drive).</p>
+    <section class="setting" id="settings-folder-section">
+      <label class="setting-label" for="settings-save-mode" data-i18n>Save takes to</label>
+      <div class="folder-row">
+        <select id="settings-save-mode">
+          <option value="ask" data-i18n>Ask every time</option>
+          <option value="folder" data-i18n>This folder:</option>
+        </select>
+        <span id="settings-folder" class="folder-path"></span>
+        <button id="settings-choose-folder" class="small" data-i18n>Choose…</button>
+      </div>
+    </section>
+    <section class="setting">
+      <label class="setting-label" for="settings-template" data-i18n>File name</label>
+      <input id="settings-template" autocomplete="off" spellcheck="false">
+      <div id="settings-tags" class="tag-buttons"></div>
+      <p class="note"><span data-i18n>Example:</span> <span id="settings-example" class="example"></span></p>
+    </section>
+
+    <section class="setting" id="settings-kokoro-section" hidden>
+      <label class="check"><input type="checkbox" id="settings-kokoro"> <span data-i18n>Natural voices (Kokoro)</span></label>
+      <p class="note" data-i18n>Downloads about 100 MB the first time (needs internet), then works offline. Recommended on iPad; on older iPhones it may be slow.</p>
+    </section>
+
+    <h3 class="settings-group" data-i18n>Cues</h3>
+    <section class="setting">
+      <label class="setting-label" for="sensitivity-slider"><span data-i18n>Mic sensitivity</span>
+        <span id="sensitivity-value" class="setting-value"></span>
+      </label>
+      <input type="range" id="sensitivity-slider" min="1" max="10" step="1">
+      <p class="note" data-i18n>Raise it if the app doesn't notice you speaking. Lower it if background noise sets it off.</p>
+      <div class="meter wide" title="Your microphone level" data-i18n-title><div id="settings-meter-fill" class="meter-fill"></div><div class="meter-threshold"></div></div>
+      <p id="settings-meter-note" class="note"></p>
+    </section>
+    <section class="setting">
+      <label class="setting-label" for="settings-pause-slider"><span data-i18n>Wait after I stop talking</span>
+        <span id="settings-pause-value" class="setting-value"></span>
+      </label>
+      <input type="range" id="settings-pause-slider" min="0.5" max="3" step="0.1">
+      <p class="note" data-i18n>How long a pause counts as finishing your line before the next cue.</p>
+    </section>
+
+    <div class="dialog-buttons">
+      <span id="app-version" class="version-label"></span>
+      <button id="settings-close" class="primary" data-i18n>Done</button>
+    </div>
+  </dialog>
+
+  <main id="view-script" class="view script-view">
+    <div class="script-toolbar">
+      <button id="import-btn" class="primary" data-i18n>Import script…</button>
+      <input type="file" id="file-input" accept=".pdf,.docx,.doc" hidden>
+      <span id="file-name" class="file-name"></span>
+      <label class="inline" id="role-label" hidden><span data-i18n>I'm playing</span>
+        <select id="role-select"></select>
+      </label>
+      <label class="inline" id="language-label" hidden><span data-i18n>Script language</span>
+        <select id="script-language"></select>
+      </label>
+      <form id="add-character" class="inline" hidden>
+        <input id="new-character" placeholder="Add a missing character" aria-label="Add a missing character" data-i18n-placeholder data-i18n-aria autocomplete="off">
+        <button type="submit" data-i18n>Add</button>
+      </form>
+      <span id="script-stats" class="note"></span>
+    </div>
+    <p id="script-empty" class="empty" role="status"></p>
+    <p id="script-help" class="note" hidden data-i18n>Check that each line has the right character. If something is labeled wrong, change it with the menu next to it.</p>
+    <div class="script-layout">
+      <div id="script-body" class="script"></div>
+      <aside id="voices-panel" class="voices-panel" hidden>
+        <h2 data-i18n>Scene partner voices</h2>
+        <p id="engine-status" class="note"></p>
+        <div id="voice-rows"></div>
+        <button id="library-btn" data-i18n>Get more voices…</button>
+        <button id="prepare-btn" data-i18n>Prepare all lines</button>
+        <p id="prepare-status" class="note"></p>
+      </aside>
+    </div>
+  </main>
+
+  <main id="view-rehearse" class="view rehearse-view" hidden>
+    <div class="rehearse-toolbar">
+      <label class="inline"><span data-i18n>Scene</span> <select id="rehearse-scene"></select></label>
+      <button id="rehearse-play" class="primary">▶ Play</button>
+      <button id="rehearse-restart" data-i18n>⟲ Restart scene</button>
+      <button id="rehearse-next"><span data-i18n>Next line</span> <kbd data-i18n>Space</kbd></button>
+      <label class="inline pause-setting"><span data-i18n>Wait after I stop talking</span>
+        <input type="range" id="pause-slider" min="0.5" max="3" step="0.1" value="1.2" aria-label="Wait after I stop talking" data-i18n-aria>
+        <span id="pause-value">1.2 s</span>
+      </label>
+    </div>
+    <div class="rehearse-status">
+      <span id="rehearse-state" class="state" role="status"></span>
+      <div class="meter" title="Your microphone level" data-i18n-title><div id="meter-fill" class="meter-fill"></div><div class="meter-threshold"></div></div>
+    </div>
+    <p id="rehearse-empty" class="empty" data-i18n>Import a script and choose your character in the Script tab first.</p>
+    <div id="rehearse-body" class="rehearse-script"></div>
+  </main>
+
+  <main id="view-record" class="view" hidden>
+    <section class="stage">
+      <video id="preview" autoplay muted playsinline></video>
+      <video id="playback" controls playsinline hidden></video>
+      <div id="rec-badge" class="rec-badge" hidden><span class="dot"></span><span id="timer">00:00</span></div>
+    </section>
+
+    <section id="record-lines" class="record-lines" hidden>
+      <div id="record-lines-body" class="record-lines-body"></div>
+    </section>
+
+    <aside class="controls">
+      <label><span data-i18n>Camera</span>
+        <select id="camera-select"></select>
+      </label>
+      <label><span data-i18n>Microphone</span>
+        <select id="mic-select"></select>
+      </label>
+
+      <div id="scene-record" class="scene-record" hidden>
+        <label class="check"><input type="checkbox" id="play-scene" checked> <span data-i18n>Play the scene while recording</span></label>
+        <label><span data-i18n>Scene</span>
+          <select id="record-scene"></select>
+        </label>
+        <label class="check"><input type="checkbox" id="show-lines" checked> <span data-i18n>Show the lines while recording</span></label>
+        <label class="check"><input type="checkbox" id="mix-partner" checked> <span data-i18n>Include partner voices in the video</span></label>
+        <p class="note" data-i18n>Turn this off if you're using speakers and your mic already picks up the voices.</p>
+      </div>
+
+      <div id="record-controls">
+        <button id="record-btn" class="record" data-i18n>● Record</button>
+        <button id="record-next" class="next-btn" hidden><span data-i18n>Next line</span> ▸</button>
+      </div>
+
+      <div id="review-controls" class="review-controls" hidden>
+        <button id="save-btn" class="primary" data-i18n>Save take</button>
+        <button id="discard-btn" data-i18n>Discard &amp; retake</button>
+        <p id="format-note" class="note"></p>
+      </div>
+    </aside>
+  </main>
+
+  <main id="view-slate" class="view" hidden>
+    <section class="stage">
+      <video id="slate-preview" autoplay muted playsinline></video>
+      <video id="slate-playback" controls playsinline hidden></video>
+      <div id="slate-rec-badge" class="rec-badge" hidden><span class="dot"></span><span id="slate-timer">00:00</span></div>
+      <!-- Shown over the preview only; it is never part of the recording. -->
+      <div id="slate-overlay" class="slate-overlay" hidden>
+        <div id="slate-overlay-count" class="cue-count"></div>
+        <div id="slate-overlay-label" class="cue-label"></div>
+        <div id="slate-overlay-value" class="cue-big"></div>
+        <div id="slate-overlay-next" class="cue-next"></div>
+      </div>
+    </section>
+
+    <section class="slate-cues">
+      <h3 data-i18n>Say on your slate</h3>
+      <ol id="slate-cue-list" class="slate-cue-list"></ol>
+      <p id="slate-cue-empty" class="note" data-i18n>Tick items in the checklist to see them here.</p>
+    </section>
+
+    <aside class="controls slate-panel">
+      <div class="slate-checklist">
+        <h3 data-i18n>Slate checklist</h3>
+        <p class="note" data-i18n>Tick what the casting call asks for and fill in your answers. They're remembered for next time.</p>
+        <div id="slate-items"></div>
+        <form id="slate-add" class="slate-add">
+          <input id="slate-new" placeholder="Add another item" aria-label="Add another item" data-i18n-placeholder data-i18n-aria autocomplete="off">
+          <button type="submit" data-i18n>Add</button>
+        </form>
+      </div>
+
+      <div id="slate-record-controls">
+        <button id="slate-record-btn" class="record" data-i18n>● Record slate</button>
+        <button id="slate-next" class="next-btn" hidden><span data-i18n>Next item</span> ▸</button>
+      </div>
+      <div id="slate-review-controls" class="review-controls" hidden>
+        <button id="slate-save-btn" class="primary" data-i18n>Save slate</button>
+        <button id="slate-discard-btn" data-i18n>Discard &amp; retake</button>
+        <p id="slate-note" class="note"></p>
+      </div>
+    </aside>
+  </main>
+
+  <script src="platform-web.js"></script>
+  <script src="vendor/mammoth.browser.min.js"></script>
+  <script type="module" src="media.js"></script>
+  <script type="module" src="script-ui.js"></script>
+  <script type="module" src="recorder.js"></script>
+  <script type="module" src="rehearse-ui.js"></script>
+  <script type="module" src="slate-ui.js"></script>
+  <script type="module" src="settings-ui.js"></script>
+  <script type="module" src="voice-library.js"></script>
+</body>
+</html>
